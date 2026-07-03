@@ -28,6 +28,11 @@ body {
   font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
 }
 
+html.bubble-root-mode,
+html.bubble-root-mode body {
+  background: transparent !important;
+}
+
 body.bubble-body {
   background: transparent;
   overflow: hidden;
@@ -267,6 +272,7 @@ th {
   display: grid;
   place-items: center;
   background: transparent;
+  -webkit-app-region: drag;
 }
 
 .bubble {
@@ -280,6 +286,7 @@ th {
   position: relative;
   cursor: pointer;
   user-select: none;
+  -webkit-app-region: no-drag;
 }
 
 .bubble::before {
@@ -319,4 +326,3 @@ th {
     transform: rotate(360deg);
   }
 }
-
