@@ -3,7 +3,10 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("bolApi", {
   getState: () => ipcRenderer.invoke("app:getState"),
   toggleCapture: () => ipcRenderer.invoke("capture:toggle"),
+  startCapture: () => ipcRenderer.invoke("capture:start"),
   runCapture: () => ipcRenderer.invoke("capture:run"),
+  stopCapture: () => ipcRenderer.invoke("capture:stop"),
+  finishCapture: () => ipcRenderer.invoke("capture:finish"),
   loadErpFile: () => ipcRenderer.invoke("file:loadErp"),
   loadTemplateFile: () => ipcRenderer.invoke("file:loadTemplate"),
   exportProcessedFile: () => ipcRenderer.invoke("file:exportProcessed"),
@@ -23,4 +26,3 @@ contextBridge.exposeInMainWorld("bolApi", {
     ipcRenderer.send("app:help");
   },
 });
-
