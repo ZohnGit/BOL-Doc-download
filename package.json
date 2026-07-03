@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis --publish never"
   },
   "build": {
     "appId": "com.codex.bolorderorganize",
