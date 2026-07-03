@@ -6,6 +6,9 @@ const state = {
   view: "shipped",
   captureRunning: false,
   captureBusy: false,
+  capturePaused: false,
+  captureHasCaptured: false,
+  captureFinalized: false,
   lastError: "",
   capturedRows: [],
   erpFilePath: "",
@@ -31,21 +34,30 @@ function escapeHtml(value) {
 
 function render() {
   if (mode === "bubble") {
+    document.documentElement.className = "bubble-root-mode";
     document.body.className = "bubble-body";
+
+    const bubbleText = state.captureBusy
+      ? "中止爬取"
+      : state.captureHasCaptured
+        ? "继续爬取"
+        : "开始爬取";
+
     appRoot.innerHTML = `
       <div class="bubble-root">
         <div class="bubble ${state.captureBusy ? "busy" : ""}" id="bubble">
-          <span>${state.captureRunning ? "End" : "Start"}</span>
+          <span>${bubbleText}</span>
         </div>
       </div>
-      <div class="bubble-caption">${state.captureBusy ? "正在爬取..." : state.captureRunning ? "点击继续抓取" : "点击开始抓取"}</div>
     `;
+
     document.getElementById("bubble").onclick = async () => {
       if (state.captureBusy) {
+        await window.bolApi.stopCapture();
         return;
       }
       if (!state.captureRunning) {
-        await window.bolApi.toggleCapture();
+        await window.bolApi.startCapture();
         return;
       }
       await window.bolApi.runCapture();
@@ -53,9 +65,11 @@ function render() {
     return;
   }
 
+  document.documentElement.className = "";
   document.body.className = "";
   const disabledBlock2 = !state.summary.orderCount;
   const disabledBlock3 = !(state.summary.orderCount && state.summary.erpCount);
+
   appRoot.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
@@ -92,19 +106,25 @@ function dailyView() {
 }
 
 function shippedView(disabledBlock2, disabledBlock3) {
-  const captureButtonText = state.captureRunning ? "结束爬取" : "开始爬取";
+  const captureButtonText = state.captureRunning
+    ? state.captureBusy
+      ? "结束爬取"
+      : state.capturePaused
+        ? "开始爬取"
+        : "结束爬取"
+    : "开始爬取";
   return `
     <h1 class="page-title">标发数据</h1>
 
-    <section class="block ${state.captureRunning ? "" : ""}">
+    <section class="block">
       <div class="block-header">
         <h2>1）爬取Shipped页面数据</h2>
         <div class="small-note">状态：${state.captureRunning ? (state.captureBusy ? "抓取中" : "已开启") : "未开始"}</div>
       </div>
       <div class="block-body">
-        <div class="small-note">点击开始后会显示悬浮球。悬浮球每次点击会抓取当前页面可见数据，并在结束时汇总。</div>
+        <div class="small-note">点击开始后会显示悬浮球。悬浮球每次点击会抓取当前页面可见数据。抓取中可中止，未抓完不允许结束。</div>
         <div class="controls">
-          <button class="btn" id="captureToggle">${captureButtonText}</button>
+          <button class="btn ${state.captureBusy ? "disabled" : ""}" id="captureToggle" ${state.captureBusy ? "disabled" : ""}>${captureButtonText}</button>
         </div>
         <div class="summary-grid">
           <div class="summary-card"><span>已抓取订单</span><strong>${state.summary.orderCount}</strong></div>
@@ -170,7 +190,7 @@ function shippedView(disabledBlock2, disabledBlock3) {
       </div>
       <div class="block-body">
         <button class="btn ${state.outputReady ? "" : "disabled"}" id="exportFile" ${state.outputReady ? "" : "disabled"}>可批量上传标发文件下载</button>
-        <div class="status-line">${state.lastError ? escapeHtml(state.lastError) : state.outputReady ? "处理好的xlsx文件已准备完成。" : "完成前三步后，这里会启用导出。"}</div>
+        <div class="status-line">${state.lastError ? escapeHtml(state.lastError) : state.outputReady ? "处理好的xlsx文件已准备完成。" : "完成前三步并点击结束爬取后启用导出。"}</div>
       </div>
     </section>
   `;
@@ -180,7 +200,14 @@ function bindShippedActions(disabledBlock2, disabledBlock3) {
   const captureToggle = document.getElementById("captureToggle");
   if (captureToggle) {
     captureToggle.onclick = async () => {
-      await window.bolApi.toggleCapture();
+      if (state.captureBusy) {
+        return;
+      }
+      if (!state.captureRunning || state.capturePaused) {
+        await window.bolApi.startCapture();
+        return;
+      }
+      await window.bolApi.finishCapture();
     };
   }
 
@@ -229,7 +256,11 @@ function bindShippedActions(disabledBlock2, disabledBlock3) {
 window.bolApi.onStateUpdate((payload) => {
   state.captureRunning = payload.captureRunning;
   state.captureBusy = payload.captureBusy;
+  state.capturePaused = payload.capturePaused;
+  state.captureHasCaptured = payload.captureHasCaptured;
+  state.captureFinalized = payload.captureFinalized;
   state.outputReady = payload.outputReady;
+  state.summary.filledRows = payload.outputReady ? state.summary.orderCount : 0;
   state.lastError = payload.lastError || "";
   render();
 });
@@ -238,7 +269,6 @@ window.bolApi.onCaptureBatch((payload) => {
   state.capturedRows = payload.rows || [];
   state.summary.orderCount = payload.total || state.capturedRows.length;
   state.summary.filledRows = state.outputReady ? state.summary.orderCount : 0;
-  state.outputReady = Boolean(payload.total && state.summary.erpCount && state.summary.templateRows);
   render();
 });
 
@@ -250,12 +280,16 @@ window.bolApi.onAppError((payload) => {
 window.bolApi.onBubbleUpdate((payload) => {
   state.captureRunning = payload.captureRunning;
   state.captureBusy = payload.captureBusy;
+  state.capturePaused = payload.capturePaused;
+  state.captureHasCaptured = payload.captureHasCaptured;
   render();
 });
 
 window.bolApi.getState().then((payload) => {
   state.captureRunning = payload.captureRunning;
   state.captureBusy = payload.captureBusy;
+  state.captureHasCaptured = payload.captureHasCaptured;
+  state.captureFinalized = payload.captureFinalized;
   state.capturedRows = payload.capturedRows || [];
   state.erpFilePath = payload.erpFilePath || "";
   state.templateFilePath = payload.templateFilePath || "";
